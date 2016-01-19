@@ -6,9 +6,6 @@ import (
 	scopes "launchpad.net/go-unityscopes/v2"
 )
 
-// Current version of the following mostly copied from:
-// https://developer.ubuntu.com/en/scopes/tutorials/developing-scopes-go/
-
 const searchCategoryTemplate = `{
   "schema-version": 1,
   "template": {
@@ -103,8 +100,8 @@ func (s *MyScope) Preview(result *scopes.Result, metadata *scopes.ActionMetadata
 }
 
 func (s *MyScope) Search(query *scopes.CannedQuery, metadata *scopes.SearchMetadata, reply *scopes.SearchReply, cancelled <-chan bool) error {
-	root_department := s.CreateDepartments(query, metadata, reply)
-	reply.RegisterDepartments(root_department)
+	rootDept := s.CreateDepartments(query, metadata, reply)
+	reply.RegisterDepartments(rootDept)
 
 	// test incompatible features in RTM version of libunity-scopes
 	filter1 := scopes.NewOptionSelectorFilter("f1", "Options", false)
@@ -166,65 +163,36 @@ func (s *MyScope) AddQueryResults(reply *scopes.SearchReply, query string) error
 
 // DEPARTMENTS *****************************************************************
 
-func SearchDepartment(root *scopes.Department, id string) *scopes.Department {
-	sub_depts := root.Subdepartments()
-	for _, element := range sub_depts {
-		if element.Id() == id {
-			return element
-		}
-	}
-	return nil
-}
-
-func (s *MyScope) GetRockSubdepartments(query *scopes.CannedQuery, metadata *scopes.SearchMetadata, reply *scopes.SearchReply) *scopes.Department {
-	active_dep, err := scopes.NewDepartment("Rock", query, "Rock Music")
-	if err == nil {
-		active_dep.SetAlternateLabel("Rock Music Alt")
-		department, _ := scopes.NewDepartment("60s", query, "Rock from the 60s")
-		active_dep.AddSubdepartment(department)
-
-		department2, _ := scopes.NewDepartment("70s", query, "Rock from the 70s")
-		active_dep.AddSubdepartment(department2)
-	} else {
-		log.Printf("Error from GetRockSubdepartments: %v\n", err)
-		reply.Error(err)
-	}
-
-	return active_dep
-}
-
-func (s *MyScope) GetSoulSubdepartments(query *scopes.CannedQuery,
-	metadata *scopes.SearchMetadata,
-	reply *scopes.SearchReply) *scopes.Department {
-	active_dep, err := scopes.NewDepartment("Soul", query, "Soul Music")
-	if err == nil {
-		active_dep.SetAlternateLabel("Soul Music Alt")
-		department, _ := scopes.NewDepartment("Motown", query, "Motown Soul")
-		active_dep.AddSubdepartment(department)
-
-		department2, _ := scopes.NewDepartment("New Soul", query, "New Soul")
-		active_dep.AddSubdepartment(department2)
-	}
-
-	return active_dep
-}
-
 func (s *MyScope) CreateDepartments(query *scopes.CannedQuery, metadata *scopes.SearchMetadata, reply *scopes.SearchReply) *scopes.Department {
+	root, err := scopes.NewDepartment("", query, "All Encrypted Files and Data")
+	if err != nil {
+		reply.Error(err)
+		return nil
+	}
+	root.SetAlternateLabel("All Encrypted Files and Data")
 
-	department, _ := scopes.NewDepartment("", query, "Browse Music")
-	department.SetAlternateLabel("Browse Music Alt")
-
-	rock_dept := s.GetRockSubdepartments(query, metadata, reply)
-	if rock_dept != nil {
-		department.AddSubdepartment(rock_dept)
+	audioDept, err := scopes.NewDepartment("audio", query, "Music & Audio")
+	if err != nil {
+		reply.Error(err)
+	} else {
+		root.AddSubdepartment(audioDept)
 	}
 
-	soul_dept := s.GetSoulSubdepartments(query, metadata, reply)
-	if soul_dept != nil {
-		department.AddSubdepartment(soul_dept)
+	notesDept, err := scopes.NewDepartment("notes", query, "Notes")
+	if err != nil {
+		reply.Error(err)
+	} else {
+		root.AddSubdepartment(notesDept)
 	}
 
-	return department
+	pwDept, err := scopes.NewDepartment("passwords", query, "Passwords")
+	if err != nil {
+		reply.Error(err)
+	} else {
+		root.AddSubdepartment(pwDept)
+	}
+
+	return root
 }
 
 // MAIN ************************************************************************
