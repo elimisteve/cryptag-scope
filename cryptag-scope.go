@@ -37,7 +37,7 @@ func (s *MyScope) Preview(result *scopes.Result, metadata *scopes.ActionMetadata
 	layout2col.AddColumn("image")
 	layout2col.AddColumn("header", "summary", "actions")
 
-	// Three cokumn layout
+	// Three column layout
 	layout3col.AddColumn("image")
 	layout3col.AddColumn("header", "summary", "actions")
 	layout3col.AddColumn()
@@ -164,20 +164,13 @@ func (s *MyScope) AddQueryResults(reply *scopes.SearchReply, query string) error
 // DEPARTMENTS *****************************************************************
 
 func (s *MyScope) CreateDepartments(query *scopes.CannedQuery, metadata *scopes.SearchMetadata, reply *scopes.SearchReply) *scopes.Department {
-	root, err := scopes.NewDepartment("", query, "All Encrypted Files and Data")
+	root, err := scopes.NewDepartment("", query, "All CrypTag Data")
 	if err != nil {
 		reply.Error(err)
 		return nil
 	}
-	root.SetAlternateLabel("All Encrypted Files and Data")
 
-	audioDept, err := scopes.NewDepartment("audio", query, "Music & Audio")
-	if err != nil {
-		reply.Error(err)
-	} else {
-		root.AddSubdepartment(audioDept)
-	}
-
+	// "type:note" and "type:text"
 	notesDept, err := scopes.NewDepartment("notes", query, "Notes")
 	if err != nil {
 		reply.Error(err)
@@ -185,11 +178,20 @@ func (s *MyScope) CreateDepartments(query *scopes.CannedQuery, metadata *scopes.
 		root.AddSubdepartment(notesDept)
 	}
 
+	// "type:password" and "type:text"
 	pwDept, err := scopes.NewDepartment("passwords", query, "Passwords")
 	if err != nil {
 		reply.Error(err)
 	} else {
 		root.AddSubdepartment(pwDept)
+	}
+
+	// "type:file"
+	fileDept, err := scopes.NewDepartment("files", query, "Files")
+	if err != nil {
+		reply.Error(err)
+	} else {
+		root.AddSubdepartment(fileDept)
 	}
 
 	return root
