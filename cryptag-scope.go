@@ -2,7 +2,11 @@ package main
 
 import (
 	"log"
+	"strings"
+	"time"
 
+	"github.com/elimisteve/cryptag/backend"
+	"github.com/elimisteve/cryptag/types"
 	scopes "launchpad.net/go-unityscopes/v2"
 )
 
@@ -23,6 +27,8 @@ const searchCategoryTemplate = `{
 
 type MyScope struct {
 	base *scopes.ScopeBase
+
+	dbox *backend.DropboxRemote
 }
 
 func (s *MyScope) Preview(result *scopes.Result, metadata *scopes.ActionMetadata, reply *scopes.PreviewReply, cancelled <-chan bool) error {
@@ -109,7 +115,7 @@ func (s *MyScope) Search(query *scopes.CannedQuery, metadata *scopes.SearchMetad
 	// for RTM version of libunity-scopes we should see a log message
 	reply.PushFilters([]scopes.Filter{filter1}, filterState)
 
-	return s.AddQueryResults(reply, query.QueryString())
+	return s.AddQueryResults(query, reply, cancelled)
 }
 
 func (s *MyScope) SetScopeBase(base *scopes.ScopeBase) {
@@ -118,44 +124,63 @@ func (s *MyScope) SetScopeBase(base *scopes.ScopeBase) {
 
 // RESULTS *********************************************************************
 
-func (s *MyScope) AddQueryResults(reply *scopes.SearchReply, query string) error {
+const (
+	DEPT_ID_ALL       = "" // TODO: Surely this should change?
+	DEPT_ID_NOTES     = "notes"
+	DEPT_ID_PASSWORDS = "passwords"
+	DEPT_ID_FILES     = "files"
+)
+
+var deptToPlaintags = map[string][]string{
+	DEPT_ID_ALL:       {"all"}, // not necessary
+	DEPT_ID_NOTES:     {"type:text", "type:note"},
+	DEPT_ID_PASSWORDS: {"type:text", "type:password"},
+	DEPT_ID_FILES:     {"type:file"},
+}
+
+func (s *MyScope) AddQueryResults(query *scopes.CannedQuery, reply *scopes.SearchReply, cancelled <-chan bool) error {
+	log.Printf("AddQueryResults called...\n")
+	log.Printf("DepartmentID: '%v'\n", query.DepartmentID())
+
 	cat := reply.RegisterCategory("category", "Category", "", searchCategoryTemplate)
 
 	result := scopes.NewCategorisedResult(cat)
-	result.SetURI("http://localhost/" + query)
-	result.SetDndURI("http://localhost_dnduri" + query)
-	result.SetTitle("TEST" + query)
-	result.SetArt("https://pbs.twimg.com/profile_images/1117820653/5ttls5.jpg.png")
-	result.Set("test_value_bool", true)
-	result.Set("test_value_string", "test_value"+query)
-	result.Set("test_value_int", 1999)
-	result.Set("test_value_float", 1.999)
-	if err := reply.Push(result); err != nil {
+
+	// Fetch search results
+	queryStr := strings.TrimSpace(query.QueryString())
+
+	var plaintags []string
+	if queryStr != "" {
+		plaintags = strings.Split(queryStr, " ")
+	}
+
+	if query.DepartmentID() != DEPT_ID_ALL {
+		plaintags = append(plaintags, deptToPlaintags[query.DepartmentID()]...)
+	}
+
+	rows, err := s.dbox.RowsFromPlainTags(plaintags)
+	if err != nil {
 		return err
 	}
 
-	result.SetURI("http://localhost2/" + query)
-	result.SetDndURI("http://localhost_dnduri2" + query)
-	result.SetTitle("TEST2")
-	result.SetArt("https://pbs.twimg.com/profile_images/1117820653/5ttls5.jpg.png")
-	result.Set("test_value_bool", false)
-	result.Set("test_value_string", "test_value2"+query)
-	result.Set("test_value_int", 2000)
-	result.Set("test_value_float", 2.100)
+	artURL := "https://pbs.twimg.com/profile_images/1117820653/5ttls5.jpg.png"
 
-	// add a variant map value
-	m := make(map[string]interface{})
-	m["value1"] = 1
-	m["value2"] = "string_value"
-	result.Set("test_value_map", m)
+	for _, row := range rows {
+		result.SetURI(types.RowTagWithPrefix(row, "id:"))
+		result.SetTitle(strings.Join(row.PlainTags(), ", "))
+		result.SetArt(artURL)
+		result.Set("decrypted", row.Decrypted())
+		if err = reply.Push(result); err != nil {
+			return err
+		}
 
-	// add a variant array value
-	l := make([]interface{}, 0)
-	l = append(l, 1999)
-	l = append(l, "string_value")
-	result.Set("test_value_array", l)
-	if err := reply.Push(result); err != nil {
-		return err
+		select {
+		case <-cancelled:
+			log.Printf("Search cancelled; returning\n")
+			return nil
+		default:
+			// Keep going
+		}
 	}
 
 	return nil
@@ -198,9 +223,18 @@ func (s *MyScope) CreateDepartments(query *scopes.CannedQuery, metadata *scopes.
 }
 
 // MAIN ************************************************************************
-
 func main() {
-	if err := scopes.Run(&MyScope{}); err != nil {
+	key := []byte{
+	}
+	dboxConf := backend.DropboxConfig{
+	}
+
+	dbox, err := backend.NewDropboxRemote(key, "doesntmatter", dboxConf)
+	if err != nil {
+		log.Fatalf("LoadDropboxRemote error: %v\n", err)
+	}
+
+	if err := scopes.Run(&MyScope{dbox: dbox}); err != nil {
 		log.Fatalln(err)
 	}
 }
