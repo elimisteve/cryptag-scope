@@ -14,12 +14,13 @@ const searchCategoryTemplate = `{
   "schema-version": 1,
   "template": {
     "category-layout": "grid",
-    "card-size": "small"
+    "card-size": "small",
+    "card-layout": "horizontal"
   },
   "components": {
     "title": "title",
     "art": "art",
-    "subtitle": "username"
+    "summary": "short_summary"
   }
 }`
 
@@ -32,60 +33,72 @@ type MyScope struct {
 }
 
 func (s *MyScope) Preview(result *scopes.Result, metadata *scopes.ActionMetadata, reply *scopes.PreviewReply, cancelled <-chan bool) error {
-	layout1col := scopes.NewColumnLayout(1)
-	layout2col := scopes.NewColumnLayout(2)
-	layout3col := scopes.NewColumnLayout(3)
+	log.Printf("Preview called...\n")
 
-	// Single column layout
-	layout1col.AddColumn("image", "header", "summary", "actions")
-
-	// Two column layout
-	layout2col.AddColumn("image")
-	layout2col.AddColumn("header", "summary", "actions")
-
-	// Three column layout
-	layout3col.AddColumn("image")
-	layout3col.AddColumn("header", "summary", "actions")
-	layout3col.AddColumn()
-
-	// Register the layouts we just created
-	reply.RegisterLayout(layout1col, layout2col, layout3col)
-
-	header := scopes.NewPreviewWidget("header", "header")
-
-	// It has title and a subtitle properties
-	header.AddAttributeMapping("title", "title")
-	header.AddAttributeMapping("subtitle", "subtitle")
-
-	// Define the image section
-	image := scopes.NewPreviewWidget("image", "image")
-	// It has a single source property, mapped to the result's art property
-	image.AddAttributeMapping("source", "art")
-
-	// Define the summary section
-	description := scopes.NewPreviewWidget("summary", "text")
-	// It has a text property, mapped to the result's description property
-	description.AddAttributeMapping("text", "description")
-
-	// build variant map.
-	tuple1 := map[string]interface{}{
-		"id":    "open",
-		"label": "Open",
-		"uri":   "application:///tmp/non-existent.desktop",
+	hints := map[string]interface{}{}
+	if err := metadata.Hints(&hints); err != nil {
+		log.Printf("Hint unmarshal error: %v\n", err)
+	} else {
+		log.Printf("metadata hints: %+v\n", hints)
 	}
 
-	tuple2 := map[string]interface{}{
+	layout1col := scopes.NewColumnLayout(1)
+	// layout2col := scopes.NewColumnLayout(2)
+
+	// Single column layout
+	layout1col.AddColumn("image", "header", "summary", "content", "actions")
+
+	// // Two column layout
+	// layout2col.AddColumn("image")
+	// layout2col.AddColumn("header", "summary", "actions")
+
+	// Register the layouts we just created
+	// reply.RegisterLayout(layout1col, layout2col)
+	reply.RegisterLayout(layout1col)
+
+	//
+	// "image"
+	//
+	image := scopes.NewPreviewWidget("image", "image")
+	image.AddAttributeMapping("source", "art")
+
+	//
+	// "header"
+	//
+	header := scopes.NewPreviewWidget("header", "header")
+	header.AddAttributeMapping("title", "title")
+	header.AddAttributeMapping("text", "short_summary")
+
+	//
+	// "summary"
+	//
+	summary := scopes.NewPreviewWidget("summary", "text")
+	// It has a text property, mapped to the result's description property
+	summary.AddAttributeMapping("text", "summary")
+
+	//
+	// "content"
+	//
+	content := scopes.NewPreviewWidget("content", "text")
+	content.AddAttributeMapping("text", "text_content")
+
+	//
+	// "actions"
+	//
+	actions := scopes.NewPreviewWidget("actions", "actions")
+
+	open := map[string]interface{}{
+		"id":    "open",
+		"label": "Open",
+	}
+	// Eventually create a download link
+	// Orig:  "uri": "application:///tmp/non-existent.desktop"
+	download := map[string]interface{}{
 		"id":    "download",
 		"label": "Download",
 	}
 
-	tuple3 := map[string]interface{}{
-		"id":    "hide",
-		"label": "Hide",
-	}
-
-	actions := scopes.NewPreviewWidget("actions", "actions")
-	actions.AddAttributeValue("actions", []interface{}{tuple1, tuple2, tuple3})
+	actions.AddAttributeValue("actions", []interface{}{open, download})
 
 	var scope_data string
 
@@ -97,9 +110,9 @@ func (s *MyScope) Preview(result *scopes.Result, metadata *scopes.ActionMetadata
 	if len(scope_data) > 0 {
 		extra := scopes.NewPreviewWidget("extra", "text")
 		extra.AddAttributeValue("text", "test Text")
-		err = reply.PushWidgets(header, image, description, actions, extra)
+		err = reply.PushWidgets(header, image, summary, content, actions, extra)
 	} else {
-		err = reply.PushWidgets(header, image, description, actions)
+		err = reply.PushWidgets(header, image, summary, content, actions)
 	}
 
 	return err
@@ -126,33 +139,30 @@ func (s *MyScope) SetScopeBase(base *scopes.ScopeBase) {
 
 const (
 	DEPT_ID_ALL       = "" // TODO: Surely this should change?
-	DEPT_ID_NOTES     = "notes"
-	DEPT_ID_PASSWORDS = "passwords"
-	DEPT_ID_FILES     = "files"
+	DEPT_ID_NOTES     = "Notes"
+	DEPT_ID_PASSWORDS = "Passwords"
+	DEPT_ID_FILES     = "Files"
 )
 
 var deptToPlaintags = map[string][]string{
-	DEPT_ID_ALL:       {"all"}, // not necessary
+	// DEPT_ID_ALL:       {"all"}, // not necessary
 	DEPT_ID_NOTES:     {"type:text", "type:note"},
 	DEPT_ID_PASSWORDS: {"type:text", "type:password"},
 	DEPT_ID_FILES:     {"type:file"},
 }
 
 func (s *MyScope) AddQueryResults(query *scopes.CannedQuery, reply *scopes.SearchReply, cancelled <-chan bool) error {
-	log.Printf("AddQueryResults called...\n")
 	log.Printf("DepartmentID: '%v'\n", query.DepartmentID())
 
-	cat := reply.RegisterCategory("category", "Category", "", searchCategoryTemplate)
+	// TODO: Create different category for each type of results.
+	// E.g., when DepartmentID == "files".
+	cat := reply.RegisterCategory("category", query.DepartmentID(), "",
+		searchCategoryTemplate)
 
 	result := scopes.NewCategorisedResult(cat)
 
-	// Fetch search results
-	queryStr := strings.TrimSpace(query.QueryString())
-
-	var plaintags []string
-	if queryStr != "" {
-		plaintags = strings.Split(queryStr, " ")
-	}
+	// Split on whitespace
+	plaintags := strings.Fields(query.QueryString())
 
 	if query.DepartmentID() != DEPT_ID_ALL {
 		plaintags = append(plaintags, deptToPlaintags[query.DepartmentID()]...)
@@ -163,20 +173,31 @@ func (s *MyScope) AddQueryResults(query *scopes.CannedQuery, reply *scopes.Searc
 		return err
 	}
 
-	artURL := "https://pbs.twimg.com/profile_images/1117820653/5ttls5.jpg.png"
-
 	for _, row := range rows {
-		result.SetURI(types.RowTagWithPrefix(row, "id:"))
-		result.SetTitle(strings.Join(row.PlainTags(), ", "))
-		result.SetArt(artURL)
-		result.Set("decrypted", row.Decrypted())
+		rowID := types.RowTagWithPrefix(row, "id:")
+
+		filepath, err := types.SaveRowAsFile(row, "")
+		if err != nil {
+			log.Printf("Error saving row %v: %v\n", rowID, err)
+		} else {
+			log.Printf("Successfully saved %v to %v\n", rowID, filepath)
+		}
+
+		result.SetURI(filepath)
+		result.SetDndURI(rowID) // I don't know what this does...
+		result.SetTitle(rowTitle(row, query.DepartmentID()))
+		result.SetArt(rowArt(row))
+		result.Set("summary", rowSummary(row))
+		result.Set("short_summary", rowShortSummary(row, query.DepartmentID()))
+		result.Set("text_content", rowTextContent(row, query.DepartmentID()))
+
 		if err = reply.Push(result); err != nil {
 			return err
 		}
 
 		select {
 		case <-cancelled:
-			log.Printf("Search cancelled; returning\n")
+			log.Println("Search cancelled; returning")
 			return nil
 		default:
 			// Keep going
@@ -186,17 +207,97 @@ func (s *MyScope) AddQueryResults(query *scopes.CannedQuery, reply *scopes.Searc
 	return nil
 }
 
+func rowTitle(row *types.Row, deptID string) string {
+	if t := types.RowTagWithPrefix(row, "filename:", "title:", "site:"); t != "" {
+		return t
+	}
+	if deptID == DEPT_ID_PASSWORDS {
+		return strings.Join(humanReadableTags(row.PlainTags()), ", ")
+	}
+	return "(No Title)"
+}
+
+func rowSummary(row *types.Row) string {
+	tags := row.PlainTags()
+	return "<b>All Tags:</b> " + strings.Join(tags, ", ")
+}
+
+func rowShortSummary(row *types.Row, deptID string) string {
+	if deptID == DEPT_ID_PASSWORDS {
+		return ""
+	}
+	return strings.Join(humanReadableTags(row.PlainTags()), ", ")
+}
+
+func rowArt(row *types.Row) string {
+	var rowTypes []string
+	for _, t := range row.PlainTags() {
+		if strings.HasPrefix(t, "type:") && t != "type:text" && t != "type:file" {
+			rowTypes = append(rowTypes, strings.TrimPrefix(t, "type:"))
+		}
+	}
+	return "https://placeholdit.imgix.net/~text?txtsize=100&txt=" + strings.Join(rowTypes, ", ") + "&w=300&h=300"
+
+}
+
+func rowTextContent(row *types.Row, deptID string) string {
+	// Only attach row content if it's text
+	if !row.HasPlainTag("type:text") {
+		return ""
+	}
+
+	text := string(row.Decrypted())
+
+	switch deptID {
+	case DEPT_ID_PASSWORDS:
+		return "<b>Password:</b> " + text
+	case DEPT_ID_NOTES:
+		return "<b>Note:</b> " + text
+	}
+	return "<b>Content:</b> " + text
+}
+
+func humanReadableTags(tags []string) []string {
+	var good []string
+	for _, t := range tags {
+		if t == "all" || hasAnyPrefix(t, "type:", "id:", "app:", "filename:") {
+			continue
+		}
+		good = append(good, t)
+	}
+	return good
+}
+
+func hasAnyPrefix(s string, strs ...string) bool {
+	for i := range strs {
+		if strings.HasPrefix(s, strs[i]) {
+			return true
+		}
+	}
+	return false
+}
+
 // DEPARTMENTS *****************************************************************
 
 func (s *MyScope) CreateDepartments(query *scopes.CannedQuery, metadata *scopes.SearchMetadata, reply *scopes.SearchReply) *scopes.Department {
-	root, err := scopes.NewDepartment("", query, "All CrypTag Data")
+	// TODO: Check metadata.IsAggregated(). Also use
+	// metadata.SetAggregatedKeywords(keywords []string) at some point
+	// so this Scope's content can be found by other apps.
+	//
+	// Paraphrased from
+	// https://developer.ubuntu.com/api/scopes/cpp/development/index/
+	// -- "You can use the IsAggregated() method... in order to ensure
+	// that an appropriate set of results are returned when queried by
+	// an aggregator."
+
+	root, err := scopes.NewDepartment(DEPT_ID_ALL, query, "All CrypTag Data")
 	if err != nil {
 		reply.Error(err)
 		return nil
 	}
 
 	// "type:note" and "type:text"
-	notesDept, err := scopes.NewDepartment("notes", query, "Notes")
+	notesDept, err := scopes.NewDepartment(DEPT_ID_NOTES, query, "Notes")
 	if err != nil {
 		reply.Error(err)
 	} else {
@@ -204,7 +305,7 @@ func (s *MyScope) CreateDepartments(query *scopes.CannedQuery, metadata *scopes.
 	}
 
 	// "type:password" and "type:text"
-	pwDept, err := scopes.NewDepartment("passwords", query, "Passwords")
+	pwDept, err := scopes.NewDepartment(DEPT_ID_PASSWORDS, query, "Passwords")
 	if err != nil {
 		reply.Error(err)
 	} else {
@@ -212,7 +313,7 @@ func (s *MyScope) CreateDepartments(query *scopes.CannedQuery, metadata *scopes.
 	}
 
 	// "type:file"
-	fileDept, err := scopes.NewDepartment("files", query, "Files")
+	fileDept, err := scopes.NewDepartment(DEPT_ID_FILES, query, "Files")
 	if err != nil {
 		reply.Error(err)
 	} else {
