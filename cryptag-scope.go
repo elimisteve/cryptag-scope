@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/elimisteve/cryptag/backend"
 	"github.com/elimisteve/cryptag/types"
@@ -326,6 +327,7 @@ func (s *MyScope) CreateDepartments(query *scopes.CannedQuery, metadata *scopes.
 // MAIN ************************************************************************
 
 func main() {
+	go ticker()
 
 	dbox, err := backend.LoadDropboxRemote(
 		os.Getenv("CRYPTAG_BACKEND_PATH"),
@@ -337,5 +339,11 @@ func main() {
 
 	if err := scopes.Run(&MyScope{dbox: dbox}); err != nil {
 		log.Fatalln(err)
+	}
+}
+
+func ticker() {
+	for t := range time.Tick(time.Second) {
+		log.Printf("%v\n", t)
 	}
 }
