@@ -1,0 +1,15 @@
+{
+    "architecture": "armhf",
+    "description": "Remotely access all your CrypTag-encrypted data sitting in the cloud.",
+    "framework": "ubuntu-sdk-15.04",
+    "hooks": {
+        "cryptag-scope": {
+            "apparmor": "cryptag-scope.apparmor",
+            "scope": "cryptag-scope"
+        }
+    },
+    "maintainer": "Steven Phillips <steve@tryingtobeawesome.com>",
+    "name": "cryptag-scope.elimisteve",
+    "title": "CrypTag Scope",
+    "version": "0.1"
+}
