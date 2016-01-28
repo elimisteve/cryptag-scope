@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 	"strings"
-	"time"
 
 	"github.com/elimisteve/cryptag/backend"
 	"github.com/elimisteve/cryptag/types"
