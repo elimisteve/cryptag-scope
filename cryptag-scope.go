@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"strings"
 
 	"github.com/elimisteve/cryptag/backend"
@@ -323,13 +324,13 @@ func (s *MyScope) CreateDepartments(query *scopes.CannedQuery, metadata *scopes.
 }
 
 // MAIN ************************************************************************
-func main() {
-	key := []byte{
-	}
-	dboxConf := backend.DropboxConfig{
-	}
 
-	dbox, err := backend.NewDropboxRemote(key, "doesntmatter", dboxConf)
+func main() {
+
+	dbox, err := backend.LoadDropboxRemote(
+		os.Getenv("CRYPTAG_BACKEND_PATH"),
+		os.Getenv("CRYPTAG_BACKEND_NAME"),
+	)
 	if err != nil {
 		log.Fatalf("LoadDropboxRemote error: %v\n", err)
 	}
