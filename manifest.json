@@ -5,7 +5,7 @@
     "hooks": {
         "cryptag-scope": {
             "apparmor": "cryptag-scope.apparmor",
-            "scope": "cryptag-scope"
+            "scope": "."
         }
     },
     "maintainer": "Steven Phillips <steve@tryingtobeawesome.com>",
