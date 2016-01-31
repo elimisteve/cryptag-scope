@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"os"
 	"path"
 	"strings"
 	"time"
@@ -159,12 +158,7 @@ func (s *MyScope) SetScopeBase(base *scopes.ScopeBase) {
 	// More init
 
 	cacheDir := s.base.CacheDirectory()
-	// cryptag.TrustedBasePath = path.Join(cacheDir, ".cryptag")
 	cryptag.TrustedBasePath = cacheDir
-
-	// FIXME: If it exists, fine, but if it can't create, that's bad
-	os.MkdirAll(TrustedBasePath, 0700)
-
 	cryptag.BackendPath = path.Join(cryptag.TrustedBasePath, "backends")
 
 	s.tagCursor = ""
