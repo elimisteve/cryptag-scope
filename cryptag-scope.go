@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"path"
 	"strings"
 	"time"
@@ -140,8 +141,12 @@ func (s *MyScope) Search(query *scopes.CannedQuery, metadata *scopes.SearchMetad
 }
 
 func (s *MyScope) SetScopeBase(base *scopes.ScopeBase) {
-	log.Printf("SetScopeBase: changing s.base from `%+v` to `%+v`\n", s.base, base)
-	s.base = base
+	if base != nil {
+		log.Printf("SetScopeBase: maybe changing s.base from `%+v` to `%+v`\n", s.base, base)
+		s.base = base
+	} else if s.base == nil {
+		log.Fatalf("s.base == nil and base is, too!\n")
+	}
 
 	// Dropbox init
 
@@ -164,8 +169,14 @@ func (s *MyScope) SetScopeBase(base *scopes.ScopeBase) {
 	s.tagCursor = ""
 
 	s.cacheDir = cacheDir
+
+	// Create dir
 	s.rowCacheDir = path.Join(cacheDir, "rows")
+	os.MkdirAll(s.rowCacheDir, 0700)
+
+	// Create dir
 	s.tagCacheDir = path.Join(cacheDir, "tags")
+	os.MkdirAll(s.tagCacheDir, 0700)
 
 	log.Printf("*MyScope == `%#v`\n", s)
 }
