@@ -145,7 +145,8 @@ func (s *MyScope) SetScopeBase(base *scopes.ScopeBase) {
 		log.Printf("SetScopeBase: maybe changing s.base from `%+v` to `%+v`\n", s.base, base)
 		s.base = base
 	} else if s.base == nil {
-		log.Fatalf("s.base == nil and base is, too!\n")
+		log.Printf("FATAL: s.base == nil and base is, too! Returning...\n")
+		return
 	}
 
 	// Dropbox init
