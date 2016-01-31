@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -31,6 +32,12 @@ type MyScope struct {
 	base *scopes.ScopeBase
 
 	dbox *backend.DropboxRemote
+
+	tagCursor string // For efficient diffs when fetching new tags
+
+	cacheDir    string
+	rowCacheDir string
+	tagCacheDir string
 }
 
 func (s *MyScope) Preview(result *scopes.Result, metadata *scopes.ActionMetadata, reply *scopes.PreviewReply, cancelled <-chan bool) error {
@@ -133,7 +140,39 @@ func (s *MyScope) Search(query *scopes.CannedQuery, metadata *scopes.SearchMetad
 }
 
 func (s *MyScope) SetScopeBase(base *scopes.ScopeBase) {
+	log.Printf("SetScopeBase: changing s.base from `%+v` to `%+v`\n", s.base, base)
 	s.base = base
+
+	// Dropbox init
+
+	dbox, err := backend.LoadDropboxRemote(
+		path.Join(s.base.ScopeDirectory(), "backends"),
+		"dropbox-remote-cryptag-scope.json",
+	)
+	if err != nil {
+		log.Fatalf("LoadDropboxRemote error: %v\n", err)
+	}
+
+	s.dbox = dbox
+
+	// More init
+
+	cacheDir := s.base.CacheDirectory()
+	// cryptag.TrustedBasePath = path.Join(cacheDir, ".cryptag")
+	cryptag.TrustedBasePath = cacheDir
+
+	// FIXME: If it exists, fine, but if it can't create, that's bad
+	os.MkdirAll(TrustedBasePath, 0700)
+
+	cryptag.BackendPath = path.Join(cryptag.TrustedBasePath, "backends")
+
+	s.tagCursor = ""
+
+	s.cacheDir = cacheDir
+	s.rowCacheDir = path.Join(cacheDir, "rows")
+	s.tagCacheDir = path.Join(cacheDir, "tags")
+
+	log.Printf("*MyScope == `%#v`\n", s)
 }
 
 // RESULTS *********************************************************************
@@ -177,7 +216,7 @@ func (s *MyScope) AddQueryResults(query *scopes.CannedQuery, reply *scopes.Searc
 	for _, row := range rows {
 		rowID := types.RowTagWithPrefix(row, "id:")
 
-		filepath, err := types.SaveRowAsFile(row, "")
+		filepath, err := types.SaveRowAsFile(row, s.rowCacheDir)
 		if err != nil {
 			log.Printf("Error saving row %v: %v\n", rowID, err)
 		} else {
@@ -190,7 +229,9 @@ func (s *MyScope) AddQueryResults(query *scopes.CannedQuery, reply *scopes.Searc
 		result.SetArt(rowArt(row))
 		result.Set("summary", rowSummary(row))
 		result.Set("short_summary", rowShortSummary(row, query.DepartmentID()))
-		result.Set("text_content", rowTextContent(row, query.DepartmentID()))
+
+		text := rowTextContent(row, query.DepartmentID())
+		result.Set("text_content", text)
 
 		if err = reply.Push(result); err != nil {
 			return err
@@ -220,7 +261,7 @@ func rowTitle(row *types.Row, deptID string) string {
 
 func rowSummary(row *types.Row) string {
 	tags := row.PlainTags()
-	return "<b>All Tags:</b> " + strings.Join(tags, ", ")
+	return bold("All Tags: ") + strings.Join(tags, ", ")
 }
 
 func rowShortSummary(row *types.Row, deptID string) string {
@@ -251,11 +292,15 @@ func rowTextContent(row *types.Row, deptID string) string {
 
 	switch deptID {
 	case DEPT_ID_PASSWORDS:
-		return "<b>Password:</b> " + text
+		return text
 	case DEPT_ID_NOTES:
-		return "<b>Note:</b> " + text
+		return bold("Note: ") + text
 	}
-	return "<b>Content:</b> " + text
+	return bold("Content: ") + text
+}
+
+func bold(text string) string {
+	return `<b>` + text + `</b>`
 }
 
 func humanReadableTags(tags []string) []string {
@@ -329,15 +374,7 @@ func (s *MyScope) CreateDepartments(query *scopes.CannedQuery, metadata *scopes.
 func main() {
 	go ticker()
 
-	dbox, err := backend.LoadDropboxRemote(
-		os.Getenv("CRYPTAG_BACKEND_PATH"),
-		os.Getenv("CRYPTAG_BACKEND_NAME"),
-	)
-	if err != nil {
-		log.Fatalf("LoadDropboxRemote error: %v\n", err)
-	}
-
-	if err := scopes.Run(&MyScope{dbox: dbox}); err != nil {
+	if err := scopes.Run(&MyScope{}); err != nil {
 		log.Fatalln(err)
 	}
 }
