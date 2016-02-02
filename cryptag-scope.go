@@ -193,6 +193,7 @@ func (s *MyScope) SetScopeBase(base *scopes.ScopeBase) {
 	// Dropbox init
 
 	backendPath := path.Join(s.base.ScopeDirectory(), "backends")
+	cryptag.Backendpath = backendPath
 
 	dbox, err := backend.LoadDropboxRemote(
 		backendPath,
