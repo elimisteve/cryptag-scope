@@ -1,10 +1,12 @@
 package main
 
 import (
+	"io/ioutil"
 	"log"
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/elimisteve/cryptag"
@@ -29,16 +31,49 @@ const searchCategoryTemplate = `{
 
 // SCOPE ***********************************************************************
 
+const (
+	CACHED_TAG_CURSOR_FILENAME = "tag_cursor"
+)
+
 type MyScope struct {
 	base *scopes.ScopeBase
 
-	dbox *backend.DropboxRemote
+	dbox    *backend.DropboxRemote
+	fsCache *backend.FileSystem
 
-	tagCursor string // For efficient diffs when fetching new tags
+	cachedTagPairs types.TagPairs
+
+	// Locks accesses to local fs cache (fsCache and tagCursor)
+	cacheLock sync.RWMutex
 
 	cacheDir    string
 	rowCacheDir string
 	tagCacheDir string
+
+	initSuccess bool
+}
+
+func (s *MyScope) cacheTagPairs(pairs types.TagPairs) error {
+	var finalErr error
+	for _, p := range pairs {
+		if _, err := s.fsCache.SaveTagPair(p); err != nil {
+			log.Printf("Error caching tag pair `%#v`: %v\n", p, err)
+			finalErr = err
+		}
+	}
+
+	return finalErr
+}
+
+func (s *MyScope) cacheTagCursor() error {
+	tagCursor := s.dbox.GetTagCursor()
+	if tagCursor == "" {
+		log.Printf("tagCursor is empty, so not caching to disk\n")
+		return nil
+	}
+
+	filepath := path.Join(s.cacheDir, CACHED_TAG_CURSOR_FILENAME)
+	return ioutil.WriteFile(filepath, []byte(tagCursor), 0600)
 }
 
 func (s *MyScope) Preview(result *scopes.Result, metadata *scopes.ActionMetadata, reply *scopes.PreviewReply, cancelled <-chan bool) error {
@@ -96,10 +131,11 @@ func (s *MyScope) Preview(result *scopes.Result, metadata *scopes.ActionMetadata
 	//
 	actions := scopes.NewPreviewWidget("actions", "actions")
 
-	open := map[string]interface{}{
-		"id":    "open",
-		"label": "Open",
+	copyClipboard := map[string]interface{}{
+		"id":    "copy",
+		"label": "Copy",
 	}
+
 	// Eventually create a download link
 	// Orig:  "uri": "application:///tmp/non-existent.desktop"
 	download := map[string]interface{}{
@@ -107,7 +143,7 @@ func (s *MyScope) Preview(result *scopes.Result, metadata *scopes.ActionMetadata
 		"label": "Download",
 	}
 
-	actions.AddAttributeValue("actions", []interface{}{open, download})
+	actions.AddAttributeValue("actions", []interface{}{copyClipboard, download})
 
 	var scope_data string
 
@@ -142,44 +178,85 @@ func (s *MyScope) Search(query *scopes.CannedQuery, metadata *scopes.SearchMetad
 
 func (s *MyScope) SetScopeBase(base *scopes.ScopeBase) {
 	if base != nil {
-		log.Printf("SetScopeBase: maybe changing s.base from `%+v` to `%+v`\n", s.base, base)
+		log.Printf("SetScopeBase: changing s.base from `%+v` to `%+v`\n", s.base, base)
 		s.base = base
 	} else if s.base == nil {
 		log.Printf("FATAL: s.base == nil and base is, too! Returning...\n")
 		return
 	}
 
+	if s.initSuccess {
+		log.Printf("*MyScope already initialized; returning ~early from SetScopeBase...\n")
+		return
+	}
+
 	// Dropbox init
 
+	backendPath := path.Join(s.base.ScopeDirectory(), "backends")
+
 	dbox, err := backend.LoadDropboxRemote(
-		path.Join(s.base.ScopeDirectory(), "backends"),
+		backendPath,
 		"dropbox-remote-cryptag-scope.json",
 	)
 	if err != nil {
 		log.Fatalf("LoadDropboxRemote error: %v\n", err)
 	}
-
 	s.dbox = dbox
 
 	// More init
 
-	cacheDir := s.base.CacheDirectory()
-	cryptag.TrustedBasePath = cacheDir
-	cryptag.BackendPath = path.Join(cryptag.TrustedBasePath, "backends")
+	s.cacheDir = s.base.CacheDirectory()
+	cryptag.TrustedBasePath = s.cacheDir
+	cryptag.LocalDataPath = s.cacheDir
 
-	s.tagCursor = ""
-
-	s.cacheDir = cacheDir
-
-	// Create dir
-	s.rowCacheDir = path.Join(cacheDir, "rows")
+	s.rowCacheDir = path.Join(s.cacheDir, "rows")
 	os.MkdirAll(s.rowCacheDir, 0700)
 
-	// Create dir
-	s.tagCacheDir = path.Join(cacheDir, "tags")
+	s.tagCacheDir = path.Join(s.cacheDir, "tags")
 	os.MkdirAll(s.tagCacheDir, 0700)
 
-	log.Printf("*MyScope == `%#v`\n", s)
+	log.Printf("*MyScope before loading cached data == `%#v`\n", s)
+
+	//
+	// Grab cached data
+	//
+
+	s.cacheLock.RLock()
+	defer s.cacheLock.RUnlock()
+
+	// Cached tag cursor
+	tagCursor, err := loadCachedTagCursor(s.cacheDir) // TODO: Create rowCursor
+	if err != nil {
+		log.Printf("Error from loadCachedTagCursor: %v\n", err)
+	} else {
+		s.dbox.SetTagCursor(tagCursor)
+	}
+
+	// Cached tags
+	fsCache, err := backend.LoadOrCreateFileSystem(backendPath, "local-filesystem-cache")
+	if err != nil {
+		log.Fatalf("LoadOrCreateFileSystem: uh oh: %v\n", err)
+	}
+	s.fsCache = fsCache
+
+	tagPairs, err := fsCache.AllTagPairs()
+	if err != nil {
+		log.Printf("Error from fsCache.AllTagPairs: %v\n", err)
+	} else {
+		s.cachedTagPairs = tagPairs
+	}
+
+	s.initSuccess = true
+
+	log.Printf("TEMP/FIXME: *MyScope AFTER loading cached data == `%#v`\n", s)
+}
+
+func loadCachedTagCursor(dir string) (cursor string, err error) {
+	cursorB, err := ioutil.ReadFile(path.Join(dir, CACHED_TAG_CURSOR_FILENAME))
+	if err != nil {
+		return "", err
+	}
+	return string(cursorB), nil
 }
 
 // RESULTS *********************************************************************
@@ -215,31 +292,93 @@ func (s *MyScope) AddQueryResults(query *scopes.CannedQuery, reply *scopes.Searc
 		plaintags = append(plaintags, deptToPlaintags[query.DepartmentID()]...)
 	}
 
-	rows, err := s.dbox.RowsFromPlainTags(plaintags)
+	go func() {
+		log.Printf("s.dbox.AllTagPairs starting\n")
+		start := time.Now()
+
+		pairs, err := s.dbox.AllTagPairs()
+		log.Printf("s.dbox.AllTagPairs finished in %s\n", time.Since(start))
+		if err != nil {
+			if strings.Contains(err.Error(), "unexpected HTTP status code 304") {
+				// No problem!
+				return
+			}
+			log.Printf("Error getting all pairs: %v", err)
+			return // Nothing new to cache
+		}
+
+		s.cacheLock.Lock()
+		defer s.cacheLock.Unlock()
+
+		if err = s.cacheTagPairs(pairs); err != nil {
+			log.Printf("Error from cacheTagPairs: %v\n", err)
+		} else {
+			log.Printf("Successfully cached all tag pairs to fsCache\n")
+		}
+
+		if err := s.cacheTagCursor(); err != nil {
+			log.Printf("Error fram cacheTagCursor: %v\n", err)
+		} else {
+			log.Printf("Successfully cached tag cursor\n")
+		}
+
+	}()
+
+	// If you want passwords, download them, otherwise just get file
+	// (Row) metadata
+	var rows []*types.Row
+	var err error
+	if query.DepartmentID() == DEPT_ID_PASSWORDS {
+		log.Printf("s.dbox.RowsFromPlainTags(%#v) starting\n", plaintags)
+		start := time.Now()
+
+		// tagCursor := s.dbox.GetTagCursor()
+
+		// s.cacheLock.Lock()
+		s.dbox.SetTagCursor("")
+		rows, err = s.dbox.RowsFromPlainTags(plaintags)
+		// s.cacheLock.Unlock()
+
+		// s.dbox.SetTagCursor(tagCursor)
+
+		log.Printf("s.dbox.RowsFromPlainTags finished in %s\n", time.Since(start))
+	} else {
+		log.Printf("s.dbox.ListRows starting\n")
+		start := time.Now()
+		rows, err = s.dbox.ListRows(plaintags)
+		log.Printf("s.dbox.ListRows finished in %s\n", time.Since(start))
+	}
 	if err != nil {
 		return err
 	}
 
 	for _, row := range rows {
-		rowID := types.RowTagWithPrefix(row, "id:")
+		// rowID := types.RowTagWithPrefix(row, "id:")
 
-		filepath, err := types.SaveRowAsFile(row, s.rowCacheDir)
-		if err != nil {
-			log.Printf("Error saving row %v: %v\n", rowID, err)
+		// filepath, err := types.SaveRowAsFile(row, s.rowCacheDir)
+		// if err != nil {
+		// 	log.Printf("Error saving row %v: %v\n", rowID, err)
+		// } else {
+		// 	log.Printf("Successfully saved %v to %v\n", rowID, filepath)
+		// }
+
+		// "scope://com.canonical.scopes.clickstore?q=" + string(row.Decrypted())
+		if query.DepartmentID() == DEPT_ID_PASSWORDS {
+			// Send to self for copy-and-paste'ing!
+			result.SetURI("scope://cryptag-scope.elimisteve_cryptag-scope?q=" + string(row.Decrypted()))
 		} else {
-			log.Printf("Successfully saved %v to %v\n", rowID, filepath)
+			result.SetURI("")
 		}
 
-		result.SetURI(filepath)
-		result.SetDndURI(rowID) // I don't know what this does...
+		// result.SetURI(filepath)
+		// result.SetDndURI(rowID) // I don't know what this does...
 		result.SetTitle(rowTitle(row, query.DepartmentID()))
 		result.SetArt(rowArt(row))
 		result.Set("summary", rowSummary(row))
 		result.Set("short_summary", rowShortSummary(row, query.DepartmentID()))
+		result.Set("text_content", rowTextContent(row, query.DepartmentID()))
 
-		text := rowTextContent(row, query.DepartmentID())
-		result.Set("text_content", text)
-
+		log.Printf("Pushing result...\n")
 		if err = reply.Push(result); err != nil {
 			return err
 		}
@@ -379,15 +518,7 @@ func (s *MyScope) CreateDepartments(query *scopes.CannedQuery, metadata *scopes.
 // MAIN ************************************************************************
 
 func main() {
-	go ticker()
-
 	if err := scopes.Run(&MyScope{}); err != nil {
 		log.Fatalln(err)
-	}
-}
-
-func ticker() {
-	for t := range time.Tick(time.Second) {
-		log.Printf("%v\n", t)
 	}
 }
