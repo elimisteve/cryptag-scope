@@ -52,6 +52,20 @@ type MyScope struct {
 	initSuccess bool
 }
 
+func (s *MyScope) serverInfo() (baseURL, authToken string) {
+	m := map[string]interface{}{}
+	s.base.Settings(&m)
+
+	info := strings.SplitN(m["serverInfo"].(string), "#", 2)
+	if len(info) < 2 {
+		return
+	}
+
+	baseURL, authToken = info[0], info[1]
+
+	return
+}
+
 func (s *MyScope) cacheTagPairs(pairs types.TagPairs) error {
 	var finalErr error
 	for _, p := range pairs {
@@ -188,9 +202,7 @@ func (s *MyScope) SetScopeBase(base *scopes.ScopeBase) {
 	if err != nil { // Assume backend couldn't be found
 		log.Printf("Error from LoadWebserverBackend (`%v`), creating new backend\n", err)
 
-		// TODO/FIXME: Grab from preferences
-		serverBaseURL := ""
-		authToken := ""
+		serverBaseURL, authToken := s.serverInfo()
 
 		dbox, err = backend.NewWebserverBackend(nil, "webserver-scope", serverBaseURL, authToken)
 		if err != nil {
@@ -233,8 +245,13 @@ func (s *MyScope) SetScopeBase(base *scopes.ScopeBase) {
 	defer s.cacheLock.RUnlock()
 
 	// Cached tags
-	fsCache, err := backend.LoadOrCreateFileSystem(backendPath,
-		"local-filesystem-cache")
+	cacheCfg := &backend.Config{
+		Name:     "local-cache",
+		Key:      s.dbox.Key(),
+		Local:    true,
+		DataPath: s.cacheDir,
+	}
+	fsCache, err := backend.NewFileSystem(cacheCfg)
 	if err != nil {
 		log.Fatalf("LoadOrCreateFileSystem: uh oh: %v\n", err)
 	}
@@ -248,8 +265,6 @@ func (s *MyScope) SetScopeBase(base *scopes.ScopeBase) {
 	}
 
 	s.initSuccess = true
-
-	// log.Printf("TEMP/FIXME: *MyScope AFTER loading cached data == `%#v`\n", s)
 }
 
 // RESULTS *********************************************************************
@@ -309,7 +324,7 @@ func (s *MyScope) AddQueryResults(query *scopes.CannedQuery, reply *scopes.Searc
 	// (Row) metadata
 	var rows []*types.Row
 	var err error
-	if query.DepartmentID() == DEPT_ID_PASSWORDS {
+	if query.DepartmentID() == DEPT_ID_PASSWORDS || query.DepartmentID() == DEPT_ID_NOTES {
 		// log.Printf("s.dbox.RowsFromPlainTags(%#v) starting\n", plaintags)
 		// start := time.Now()
 		rows, err = s.dbox.RowsFromPlainTags(plaintags)
@@ -351,6 +366,7 @@ func addRowsToReply(rows types.Rows, query *scopes.CannedQuery, reply *scopes.Se
 
 		// "scope://com.canonical.scopes.clickstore?q=" + string(row.Decrypted())
 		if query.DepartmentID() == DEPT_ID_PASSWORDS {
+			result.SetURI("")
 			// Send to self for copy-and-paste'ing!
 			result.SetURI("scope://cryptag-scope.elimisteve_cryptag-scope?q=" + string(row.Decrypted()))
 		} else {
@@ -491,13 +507,13 @@ func (s *MyScope) CreateDepartments(query *scopes.CannedQuery, metadata *scopes.
 		root.AddSubdepartment(pwDept)
 	}
 
-	// "type:file"
-	fileDept, err := scopes.NewDepartment(DEPT_ID_FILES, query, "Files")
-	if err != nil {
-		reply.Error(err)
-	} else {
-		root.AddSubdepartment(fileDept)
-	}
+	// // "type:file"
+	// fileDept, err := scopes.NewDepartment(DEPT_ID_FILES, query, "Files")
+	// if err != nil {
+	// 	reply.Error(err)
+	// } else {
+	// 	root.AddSubdepartment(fileDept)
+	// }
 
 	return root
 }
