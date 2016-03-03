@@ -10,18 +10,26 @@ storing your data has no idea what it's storing.
 (Here are slides from my DEFCON talk explaining how this works:
 https://talks.stevendphillips.com/cryptag-defcon23-cryptovillage/ .)
 
-After installing CrypTag Scope on your Ubuntu Phone, install the
-CrypTag web app onto Sandstorm at
+After installing CrypTag Scope on your Ubuntu Phone...
+
+1. **Sign into Sandstorm Oasis** at https://oasis.sandstorm.io
+
+2. **Install the CrypTag Sandstorm web app** from
 https://apps.sandstorm.io/app/mkq3a9jyu6tqvzf7ayqwg620q95p438ajs02j0yx50w2aav4zra0?experimental=true
 or
 https://apps.sandstorm.io/app/mkq3a9jyu6tqvzf7ayqwg620q95p438ajs02j0yx50w2aav4zra0
-, then **click on the key icon** at the top of your screen to create
-an API key to give to CrypTag Scope and whatever other apps that will
+
+3. **Create a new CrypTag folder/instance/grain** on Sandstorm
+
+4. **Click on the key icon** at the top of your screen to create an
+API key to give to CrypTag Scope and whatever other apps that will
 access this data, such as `cpass-sandstorm` (see below).
 
-Then, on CrypTag Scope on your Ubuntu Phone, click Settings (the
-config wheel in the upper right), and paste (or type) in the API key
-you just got from Sandstorm.
+5. Now on CrypTag Scope on your Ubuntu Phone, **click Settings** (the
+config wheel icon in the upper right), and **input your Sandstorm API
+key**.
+
+Setup complete!  See below for further usage instructions.
 
 
 ## Demo
@@ -44,7 +52,7 @@ Sandstorm.  From your Linux desktop, run:
 
     $ mkdir ~/bin; cd ~/bin && wget https://github.com/elimisteve/cryptag/blob/master/bin/cpass-sandstorm?raw=true -O cpass-sandstorm && chmod +x cpass-sandstorm && ./cpass-sandstorm
 
-Now, grab a unique API key below and run
+Now, use your Sandstorm API key mentioned earlier and run
 
     $ ./cpass-sandstorm init <YOUR_SANDSTORM_API_KEY_GOES_HERE>
 
