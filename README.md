@@ -56,8 +56,39 @@ Now, use your Sandstorm API key mentioned earlier and run
 
     $ ./cpass-sandstorm init <YOUR_SANDSTORM_API_KEY_GOES_HERE>
 
-You can now create notes and passwords, including associated tags!
-The syntax is:
+
+## Key Transfer
+
+Now that the apps are installed, the last thing you need to do is
+transfer the encryption key your data will be stored with from your
+phone to your desktop.
+
+On your Linux desktop, plug in your Ubuntu Phone via USB and shell into your Ubuntu Phone with
+
+    $ adb shell
+
+Now *from this Ubuntu Phone shell* (denoted with `$$`), type
+
+    $$ cat /opt/click.ubuntu.com/cryptag-scope.elimisteve/current/backends/webserver-scope.json
+
+You should see your key; it will look something like this:
+
+    ..."Key":[123,56,78,...]...
+
+Copy that key, beginning with '[' and ending with ']', into your clipboard.
+
+Now open your desktop config file with
+
+    $ nano ~/.cryptag/backends/sandstorm-webserver.json
+
+Delete the key your desktop generated, paste in the key from your
+phone that should be in your clipboard, and save this file.
+
+
+## Back to cpass-sandstorm
+
+From your desktop you can now create notes and passwords, including
+associated tags!  The syntax is:
 
     $ ./cpass-sandstorm create <note_or_password> mytag1 mytag2 mytag3 ...
 
@@ -87,8 +118,9 @@ You can see all the text content you've stored in Sandstorm by typing
 ## CrypTag Scope on Ubuntu Phone
 
 Now that you've told CrypTag Scope where it's storing its data --
-namely in Sandstorm using the API key you've given it -- you can now
-click Notes or Passwords from the scope drop-down to see your content.
+namely in Sandstorm using the API key you've given it -- and your
+phone knows how to decrypt that data, you can now click Notes or
+Passwords from the scope drop-down to see your content.
 
 Note that tapping on a password in your search results does something
 special: the scope does a search query _to itself_ so that you can
