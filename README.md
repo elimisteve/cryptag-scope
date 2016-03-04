@@ -15,8 +15,6 @@ After installing CrypTag Scope on your Ubuntu Phone...
 1. **Sign into Sandstorm Oasis** at https://oasis.sandstorm.io
 
 2. **Install the CrypTag Sandstorm web app** from
-https://apps.sandstorm.io/app/mkq3a9jyu6tqvzf7ayqwg620q95p438ajs02j0yx50w2aav4zra0?experimental=true
-or
 https://apps.sandstorm.io/app/mkq3a9jyu6tqvzf7ayqwg620q95p438ajs02j0yx50w2aav4zra0
 
 3. **Create a new CrypTag folder/instance/grain** on Sandstorm
